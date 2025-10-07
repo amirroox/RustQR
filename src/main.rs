@@ -14,15 +14,15 @@ use styles::{DotStyle, EyeStyle, apply_dot_style, apply_eye_style, parse_gradien
 #[command(about = "Generate QR codes with custom styling", long_about = None)]
 struct Args {
     /// Text or URL to encode
-    #[arg(short, long)]
+    #[arg(short = 'd', long)]
     data: Option<String>,
 
     /// Output file path
-    #[arg(short, long)]
+    #[arg(short = 'o', long)]
     output: Option<PathBuf>,
 
-    /// Output format (png, jpg, svg)
-    #[arg(short, long, default_value = "png")]
+    /// Output format (png, jpg)
+    #[arg(short = 'f', long, default_value = "png")]
     format: String,
 
     /// Background color (hex format: #ffffff)
@@ -34,7 +34,7 @@ struct Args {
     fg_color: String,
 
     /// Gradient colors (format: #ff0000,#0000ff)
-    #[arg(long)]
+    #[arg(short = 'g', long)]
     gradient: Option<String>,
 
     /// Dot style (square, circle, rounded)
@@ -46,7 +46,7 @@ struct Args {
     eye_style: String,
 
     /// Logo file path
-    #[arg(long)]
+    #[arg(short = 'l', long)]
     logo: Option<PathBuf>,
 
     /// Logo size ratio (0.0 to 1.0)
@@ -58,7 +58,7 @@ struct Args {
     error: String,
 
     /// QR code size in pixels
-    #[arg(short, long, default_value = "300")]
+    #[arg(short = 's', long, default_value = "300")]
     size: u32,
 
     /// Border size (quiet zone)
@@ -78,11 +78,11 @@ struct Args {
     encode: bool,
 
     /// QR version (1-40)
-    #[arg(long)]
+    #[arg(short = 'v', long)]
     version: Option<i16>,
 
     /// Interactive mode
-    #[arg(short, long)]
+    #[arg(short = 'i', long)]
     interactive: bool,
 }
 
