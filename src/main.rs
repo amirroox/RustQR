@@ -21,12 +21,12 @@ struct Args {
     #[arg(short = 'o', long)]
     output: Option<PathBuf>,
 
-    /// Output format (png, jpg)
+    /// Output format (png, jpg, jpeg, svg, webp, tiff, tif, ico, bmp, gif, tga, avif, qoi)
     #[arg(short = 'f', long, default_value = "png")]
     format: String,
 
-    /// Background color (hex format: #ffffff)
-    #[arg(long, default_value = "#ffffff")]
+    /// Background color (hex format: #ffffff or 'transparent')
+    #[arg(long, default_value = "transparent")]
     bg_color: String,
 
     /// Foreground color (hex format: #000000)
@@ -58,11 +58,11 @@ struct Args {
     error: String,
 
     /// QR code size in pixels
-    #[arg(short = 's', long, default_value = "300")]
+    #[arg(short = 's', long, default_value = "500")]
     size: u32,
 
     /// Border size (quiet zone)
-    #[arg(short = 'b', long, default_value = "4")]
+    #[arg(short = 'b', long, default_value = "0")]
     border: u32,
 
     /// Show QR in terminal
@@ -92,6 +92,9 @@ fn main() -> Result<()> {
     if args.interactive {
         run_interactive_mode(&mut args)?;
     }
+
+    // Validate format
+    validate_format(&args.format)?;
 
     // Validate required data
     let data = args.data.as_ref().context("Data is required. Use --data or --interactive")?.clone();
@@ -129,10 +132,23 @@ fn main() -> Result<()> {
     // Generate image
     let img = generate_qr_image(&qr, &args)?;
 
-    // Save to file
-    let output_path = args.output.unwrap_or_else(|| PathBuf::from("qrcode.png"));
-    img.save(&output_path)
-        .context("Failed to save QR code image")?;
+    // Determine output path with correct extension
+    let output_path = if let Some(ref path) = args.output {
+        path.clone()
+    } else {
+        PathBuf::from(format!("qrcode.{}", args.format))
+    };
+
+    // Save based on format
+    match args.format.to_lowercase().as_str() {
+        "svg" => {
+            save_as_svg(&qr, &args, &output_path)?;
+        }
+        _ => {
+            img.save(&output_path)
+                .context("Failed to save QR code image")?;
+        }
+    }
 
     println!("✓ QR code saved to: {}", output_path.display());
 
@@ -166,8 +182,8 @@ fn run_interactive_mode(args: &mut Args) -> Result<()> {
 
     // Get background color
     let bg: String = Input::with_theme(&theme)
-        .with_prompt("Background color (hex)")
-        .default("#ffffff".to_string())
+        .with_prompt("Background color (hex or 'transparent')")
+        .default("transparent".to_string())
         .interact_text()?;
     args.bg_color = bg;
 
@@ -236,9 +252,17 @@ fn run_interactive_mode(args: &mut Args) -> Result<()> {
     args.size = size;
 
     // Output path
+    let format_options = vec!["png", "jpg", "svg", "webp", "bmp", "ico", "tiff"];
+    let format_idx = Select::with_theme(&theme)
+        .with_prompt("Output format")
+        .default(0)
+        .items(&format_options)
+        .interact()?;
+    args.format = format_options[format_idx].to_string();
+
     let output: String = Input::with_theme(&theme)
         .with_prompt("Output file path")
-        .default("qrcode.png".to_string())
+        .default(format!("qrcode.{}", args.format))
         .interact_text()?;
     args.output = Some(PathBuf::from(output));
 
@@ -247,8 +271,8 @@ fn run_interactive_mode(args: &mut Args) -> Result<()> {
 
 fn generate_qr_image(qr: &QrCode, args: &Args) -> Result<DynamicImage> {
     let qr_width = qr.width();
+    let img_size = args.size;
     let scale = args.size / (qr_width as u32 + 2 * args.border);
-    let img_size = (qr_width as u32 + 2 * args.border) * scale;
 
     // Parse colors
     let bg_color = parse_color(&args.bg_color)?;
@@ -311,6 +335,10 @@ fn generate_qr_image(qr: &QrCode, args: &Args) -> Result<DynamicImage> {
 }
 
 fn parse_color(hex: &str) -> Result<Rgba<u8>> {
+    if hex.to_lowercase() == "transparent" {
+        return Ok(Rgba([0, 0, 0, 0])); // Fully transparent
+    }
+
     let color = csscolorparser::parse(hex)
         .context("Invalid color format")?;
     Ok(Rgba([
@@ -337,22 +365,34 @@ fn add_logo(img: &mut RgbaImage, logo_path: &PathBuf, size_ratio: f32) -> Result
         .to_rgba8();
 
     let img_size = img.width();
-    let logo_size = (img_size as f32 * size_ratio.clamp(0.1, 0.4)) as u32;
-    let logo = image::imageops::resize(&logo, logo_size, logo_size, image::imageops::FilterType::Lanczos3);
+    let max_logo_size = (img_size as f32 * size_ratio.clamp(0.1, 0.4)) as u32;
 
-    let offset_x = (img_size - logo_size) / 2;
-    let offset_y = (img_size - logo_size) / 2;
+    // Calculate new dimensions while preserving aspect ratio
+    let logo_width = logo.width();
+    let logo_height = logo.height();
 
-    // Add white background behind logo
-    for y in 0..logo_size + 20 {
-        for x in 0..logo_size + 20 {
-            let px = offset_x as i32 + x as i32 - 10;
-            let py = offset_y as i32 + y as i32 - 10;
-            if px >= 0 && py >= 0 && px < img_size as i32 && py < img_size as i32 {
-                img.put_pixel(px as u32, py as u32, Rgba([255, 255, 255, 255]));
-            }
-        }
-    }
+    let (new_width, new_height) = if logo_width > logo_height {
+        // Landscape or square - fit width
+        let new_width = max_logo_size;
+        let new_height = (logo_height as f32 * (max_logo_size as f32 / logo_width as f32)) as u32;
+        (new_width, new_height)
+    } else {
+        // Portrait - fit height
+        let new_height = max_logo_size;
+        let new_width = (logo_width as f32 * (max_logo_size as f32 / logo_height as f32)) as u32;
+        (new_width, new_height)
+    };
+
+    let logo = image::imageops::resize(
+        &logo,
+        new_width,
+        new_height,
+        image::imageops::FilterType::Lanczos3
+    );
+
+    // Center the logo
+    let offset_x = (img_size - new_width) / 2;
+    let offset_y = (img_size - new_height) / 2;
 
     image::imageops::overlay(img, &logo, offset_x as i64, offset_y as i64);
     Ok(())
@@ -373,4 +413,123 @@ fn print_qr_terminal(qr: &QrCode) {
         println!();
     }
     println!();
+}
+
+fn save_as_svg(qr: &QrCode, args: &Args, output_path: &PathBuf) -> Result<()> {
+    use std::fs::File;
+    use std::io::Write;
+
+    let qr_width = qr.width();
+    let scale = 10; // SVG units per module
+    let _border = args.border * scale;
+    let svg_size = (qr_width as u32 + 2 * args.border) * scale;
+
+    // Parse colors for SVG
+    let bg_color = if args.bg_color.to_lowercase() == "transparent" {
+        "none".to_string()
+    } else {
+        args.bg_color.clone()
+    };
+
+    let fg_color = &args.fg_color;
+
+    let mut svg = String::new();
+    svg.push_str(&format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 {} {}" width="{}" height="{}">
+"#,
+        svg_size, svg_size, args.size, args.size
+    ));
+
+    // Background
+    if bg_color != "none" {
+        svg.push_str(&format!(
+            r#"  <rect width="100%" height="100%" fill="{}"/>
+"#,
+            bg_color
+        ));
+    }
+
+    // Check for gradient
+    if let Some(ref gradient_str) = args.gradient {
+        let parts: Vec<&str> = gradient_str.split(',').collect();
+        if parts.len() == 2 {
+            svg.push_str(&format!(
+                r#"  <defs>
+    <linearGradient id="qrGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:{};stop-opacity:1" />
+      <stop offset="100%" style="stop-color:{};stop-opacity:1" />
+    </linearGradient>
+  </defs>
+"#,
+                parts[0].trim(),
+                parts[1].trim()
+            ));
+        }
+    }
+
+    // QR modules
+    let fill_attr = if args.gradient.is_some() {
+        r#"fill="url(#qrGradient)""#.to_string()
+    } else {
+        format!(r#"fill="{}""#, fg_color)
+    };
+
+    for y in 0..qr_width {
+        for x in 0..qr_width {
+            if qr[(x, y)] == qrcode::Color::Dark {
+                let px = (x as u32 + args.border) * scale;
+                let py = (y as u32 + args.border) * scale;
+
+                match args.dot_style.to_lowercase().as_str() {
+                    "circle" => {
+                        let cx = px + scale / 2;
+                        let cy = py + scale / 2;
+                        let r = scale / 2;
+                        svg.push_str(&format!(
+                            r#"  <circle cx="{}" cy="{}" r="{}" {}/>
+"#,
+                            cx, cy, r, fill_attr
+                        ));
+                    }
+                    "rounded" => {
+                        let rx = scale / 3;
+                        svg.push_str(&format!(
+                            r#"  <rect x="{}" y="{}" width="{}" height="{}" rx="{}" {}/>
+"#,
+                            px, py, scale, scale, rx, fill_attr
+                        ));
+                    }
+                    _ => {
+                        svg.push_str(&format!(
+                            r#"  <rect x="{}" y="{}" width="{}" height="{}" {}/>
+"#,
+                            px, py, scale, scale, fill_attr
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    svg.push_str("</svg>\n");
+
+    let mut file = File::create(output_path)
+        .context("Failed to create SVG file")?;
+    file.write_all(svg.as_bytes())
+        .context("Failed to write SVG file")?;
+
+    Ok(())
+}
+
+fn validate_format(format: &str) -> Result<()> {
+    let valid = ["png", "jpg", "jpeg", "svg", "webp", "tiff", "tif", "ico", "bmp", "gif", "tga", "avif", "qoi"];
+    if !valid.contains(&format.to_lowercase().as_str()) {
+        anyhow::bail!(
+            "Unsupported format '{}'. Valid formats: {}",
+            format,
+            valid.join(", ")
+        );
+    }
+    Ok(())
 }

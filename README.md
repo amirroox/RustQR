@@ -10,7 +10,7 @@ A powerful command-line tool for generating customizable QR codes with advanced 
 - **Eye Customization**: Customize the three corner "eyes" with different styles
 - **Logo Integration**: Add your logo in the center of the QR code
 - **Error Correction**: Support for all error correction levels (L, M, Q, H)
-- **Multiple Formats**: Export as PNG, JPG, or SVG (Not complete)
+- **Multiple Formats**: Export as PNG, JPG, SVG & (webp, tiff, tif, ico, bmp, gif, tga, avif, qoi)
 - **Terminal Display**: Preview QR code directly in your terminal
 - **Clipboard Support**: Copy output path to clipboard
 - **Base64 Encoding**: Optionally encode data before generating QR
@@ -258,13 +258,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Future Features
 
-- [ ] SVG export support
 - [ ] Batch processing
 - [ ] QR code reading/decoding
-- [ ] Animation support (GIF output)
 - [ ] More gradient patterns (radial, diagonal)
 - [ ] Custom module shapes
-- [ ] QR code templates library
 
 ## Acknowledgments
 
